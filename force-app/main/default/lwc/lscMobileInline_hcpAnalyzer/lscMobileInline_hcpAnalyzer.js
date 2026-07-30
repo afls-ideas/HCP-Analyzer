@@ -1,4 +1,5 @@
 import { LightningElement, api, wire } from 'lwc';
+import { NavigationMixin } from 'lightning/navigation';
 import { gql, graphql, refreshGraphQL } from 'lightning/uiGraphQLApi';
 
 /**
@@ -14,7 +15,7 @@ import { gql, graphql, refreshGraphQL } from 'lightning/uiGraphQLApi';
  *   lsc://deeplink/lightning/r/Account/{id}/view
  */
 
-export default class HcpAnalyzer extends LightningElement {
+export default class HcpAnalyzer extends NavigationMixin(LightningElement) {
     @api mobileHeight = 700;
 
     accounts = [];
@@ -87,10 +88,33 @@ export default class HcpAnalyzer extends LightningElement {
     handleOpen(event) {
         const id = event.currentTarget.dataset.id;
         if (!id) return;
+
         const deeplink = `lsc://deeplink/lightning/r/Account/${id}/view`;
         this.lastDeeplink = deeplink;
-        // The mobile web view intercepts the lsc:// scheme and navigates natively.
-        window.location.href = deeplink;
+
+        // Always attempt the native deeplink first. In the AFLS mobile app the
+        // web view intercepts the lsc:// scheme and navigates natively. In a
+        // desktop browser lsc:// isn't registered and Lightning Web Security's
+        // SecureLocation.href throws synchronously ("supports http:, https:,
+        // mailto: schemes and relative urls") — we catch that and fall back to
+        // standard Lightning navigation for the same record. No environment
+        // detection needed: the throw itself tells us the scheme is unsupported.
+        try {
+            window.location.href = deeplink;
+        } catch (e) {
+            this.navigateToRecord(id);
+        }
+    }
+
+    navigateToRecord(recordId) {
+        this[NavigationMixin.Navigate]({
+            type: 'standard__recordPage',
+            attributes: {
+                recordId,
+                objectApiName: 'Account',
+                actionName: 'view'
+            }
+        });
     }
 
     _fmtError(e) {

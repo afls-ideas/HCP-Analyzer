@@ -13,3 +13,7 @@ npm-debug.log*
 .idea/
 .vscode/
 *.log
+
+# Org-specific wiring (retrieved/edited for a target org, not part of the package)
+force-app/main/default/applications/
+force-app/main/default/profiles/

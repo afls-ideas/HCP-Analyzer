@@ -14,6 +14,30 @@ A Lightning Web Component for the **Life Sciences Cloud (LSC) mobile app** that 
 
   The mobile web view intercepts the `lsc://` scheme and navigates natively.
 
+## Navigation: one function, both environments
+
+The same `handleOpen` handler works on the iPad **and** online — no environment detection needed:
+
+```js
+handleOpen(event) {
+    const id = event.currentTarget.dataset.id;
+    if (!id) return;
+
+    const deeplink = `lsc://deeplink/lightning/r/Account/${id}/view`;
+    this.lastDeeplink = deeplink;
+
+    try {
+        window.location.href = deeplink;
+    } catch (e) {
+        this.navigateToRecord(id);
+    }
+}
+```
+
+It always attempts the native `lsc://` deeplink first. On the **iPad** (AFLS mobile app), the web view recognizes the `lsc://` scheme and navigates natively — the assignment succeeds. **Online** (desktop browser), `lsc://` isn't a registered scheme, so Lightning Web Security's `SecureLocation.href` throws synchronously (`"supports http:, https:, mailto: schemes and relative urls"`). The `catch` picks that up and falls back to standard Lightning navigation for the same record via `NavigationMixin` (`navigateToRecord`, which calls `NavigationMixin.Navigate` to the record's `standard__recordPage`).
+
+The thrown error itself is the signal that the scheme is unsupported — so a single function covers both the native mobile deeplink and the traditional online navigation path.
+
 ## Component
 
 `force-app/main/default/lwc/lscMobileInline_hcpAnalyzer`
