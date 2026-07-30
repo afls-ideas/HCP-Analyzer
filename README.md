@@ -18,6 +18,11 @@ A Lightning Web Component for the **Life Sciences Cloud (LSC) mobile app** that 
 
 The same `handleOpen` handler works on the iPad **and** online — no environment detection needed:
 
+| iPad (LSC mobile app) | Online (desktop browser) |
+| :---: | :---: |
+| ![Deeplink on the iPad — the lsc:// scheme navigates natively](docs/Mobile_Deeplink_to_Account.gif) | ![Deeplink online — falls back to standard Lightning navigation](docs/Online_Deeplink_to_Account.gif) |
+| The `lsc://` deeplink is intercepted and navigates natively. | `lsc://` throws under LWS, so it falls back to `NavigationMixin`. |
+
 ```js
 handleOpen(event) {
     const id = event.currentTarget.dataset.id;
