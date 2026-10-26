@@ -2,6 +2,8 @@
 
 A Lightning Web Component for the **Life Sciences Cloud (LSC) mobile app** that lists Accounts and deeplinks the native app to a record via the `lsc://` URL scheme.
 
+> **New in Winter '27: `lsc://` deeplink with a 1.2 s timeout fallback.** Online, `lsc://` no longer throws, so a `try/catch` can't detect it. The component now tries the `lsc://` deeplink, and if the page isn't left within 1.2 s it falls back to online navigation via `NavigationMixin`. See [Navigation](#navigation-one-function-both-environments).
+
 ## What it does
 
 - Queries Accounts with the **GraphQL wire adapter** (`lightning/uiGraphQLApi`) — a plain, unfiltered `Account` query with `orderBy` + `first`, the technique proven to work **offline** in the LSC mobile runtime.
@@ -21,9 +23,13 @@ The same `handleOpen` handler works on the iPad **and** online — no environmen
 | iPad (LSC mobile app) | Online (desktop browser) |
 | :---: | :---: |
 | ![Deeplink on the iPad — the lsc:// scheme navigates natively](docs/Mobile_Deeplink_to_Account.gif) | ![Deeplink online — falls back to standard Lightning navigation](docs/Online_Deeplink_to_Account.gif) |
-| The `lsc://` deeplink is intercepted and navigates natively. | `lsc://` throws under LWS, so it falls back to `NavigationMixin`. |
+| The `lsc://` deeplink is intercepted and navigates natively. | `lsc://` isn't handled, so after 1.2 s it falls back to `NavigationMixin`. |
+
+> **Winter '27 requires this approach.** Before Winter '27, online `lsc://` threw synchronously under Lightning Web Security, so a `try/catch` was enough to fall back. In Winter '27 the assignment no longer throws: the browser just logs `Failed to launch 'lsc://…' because the scheme does not have a registered handler`, so a `catch` never runs and online navigation silently does nothing. The component now uses the same timeout pattern as the Agentforce launch: try the deeplink, and if the page isn't left within 1.2 s, navigate online instead.
 
 ```js
+const DEEPLINK_TIMEOUT_MS = 1200;
+
 handleOpen(event) {
     const id = event.currentTarget.dataset.id;
     if (!id) return;
@@ -31,17 +37,30 @@ handleOpen(event) {
     const deeplink = `lsc://deeplink/lightning/r/Account/${id}/view`;
     this.lastDeeplink = deeplink;
 
+    // Cancel the fallback if the page is left (the app handled the link)
+    this.cancelFallback();
+    const left = () => this.cancelFallback();
+    document.addEventListener('visibilitychange', left);
+    window.addEventListener('pagehide', left);
+    window.addEventListener('blur', left);
+    this._cleanup = () => { /* remove the three listeners */ };
+
+    // Nothing handled it within 1.2 s -> online navigation
+    this._fallbackTimer = setTimeout(() => {
+        this.cancelFallback();
+        this.navigateToRecord(id);
+    }, DEEPLINK_TIMEOUT_MS);
+
     try {
         window.location.href = deeplink;
     } catch (e) {
-        this.navigateToRecord(id);
+        this.cancelFallback();
+        this.navigateToRecord(id);   // older runtimes that still throw
     }
 }
 ```
 
-It always attempts the native `lsc://` deeplink first. On the **iPad** (AFLS mobile app), the web view recognizes the `lsc://` scheme and navigates natively — the assignment succeeds. **Online** (desktop browser), `lsc://` isn't a registered scheme, so Lightning Web Security's `SecureLocation.href` throws synchronously (`"supports http:, https:, mailto: schemes and relative urls"`). The `catch` picks that up and falls back to standard Lightning navigation for the same record via `NavigationMixin` (`navigateToRecord`, which calls `NavigationMixin.Navigate` to the record's `standard__recordPage`).
-
-The thrown error itself is the signal that the scheme is unsupported — so a single function covers both the native mobile deeplink and the traditional online navigation path.
+How it works: on the **iPad** (AFLS mobile app) the web view recognizes `lsc://` and navigates natively, which backgrounds or blurs the page (`visibilitychange` / `pagehide` / `blur`) and cancels the timer. **Online** nothing handles the scheme, the page stays put, and after 1.2 s `navigateToRecord` calls `NavigationMixin.Navigate` to the record's `standard__recordPage`. The `catch` is kept for runtimes that still throw synchronously. The "Failed to launch" console errors online are expected; they are logged before the fallback runs.
 
 ## Component
 

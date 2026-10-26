@@ -2,6 +2,8 @@ import { LightningElement, api, wire } from 'lwc';
 import { NavigationMixin } from 'lightning/navigation';
 import { gql, graphql, refreshGraphQL } from 'lightning/uiGraphQLApi';
 
+const DEEPLINK_TIMEOUT_MS = 1200;
+
 /**
  * Deeplink Account List (LSC Mobile).
  *
@@ -92,18 +94,48 @@ export default class HcpAnalyzer extends NavigationMixin(LightningElement) {
         const deeplink = `lsc://deeplink/lightning/r/Account/${id}/view`;
         this.lastDeeplink = deeplink;
 
-        // Always attempt the native deeplink first. In the AFLS mobile app the
-        // web view intercepts the lsc:// scheme and navigates natively. In a
-        // desktop browser lsc:// isn't registered and Lightning Web Security's
-        // SecureLocation.href throws synchronously ("supports http:, https:,
-        // mailto: schemes and relative urls") — we catch that and fall back to
-        // standard Lightning navigation for the same record. No environment
-        // detection needed: the throw itself tells us the scheme is unsupported.
+        // Try the native deeplink first. In the AFLS mobile app the web view
+        // intercepts lsc:// and navigates natively, which backgrounds/blurs the
+        // page. In a desktop browser the scheme has no registered handler: the
+        // failure is only logged (no throw, no event), so we can't detect it
+        // directly. Instead, if the page hasn't been left within
+        // DEEPLINK_TIMEOUT_MS, fall back to standard Lightning navigation.
+        // A synchronous throw (Lightning Web Security's SecureLocation) falls
+        // back immediately.
+        this.cancelFallback();
+        const left = () => this.cancelFallback();
+        document.addEventListener('visibilitychange', left);
+        window.addEventListener('pagehide', left);
+        window.addEventListener('blur', left);
+        this._cleanup = () => {
+            document.removeEventListener('visibilitychange', left);
+            window.removeEventListener('pagehide', left);
+            window.removeEventListener('blur', left);
+        };
+        this._fallbackTimer = setTimeout(() => {
+            this.cancelFallback();
+            this.navigateToRecord(id);
+        }, DEEPLINK_TIMEOUT_MS);
+
         try {
             window.location.href = deeplink;
         } catch (e) {
+            this.cancelFallback();
             this.navigateToRecord(id);
         }
+    }
+
+    cancelFallback() {
+        clearTimeout(this._fallbackTimer);
+        this._fallbackTimer = undefined;
+        if (this._cleanup) {
+            this._cleanup();
+            this._cleanup = undefined;
+        }
+    }
+
+    disconnectedCallback() {
+        this.cancelFallback();
     }
 
     navigateToRecord(recordId) {
